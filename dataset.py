@@ -36,5 +36,4 @@ class Vimeo90K(Dataset):
         img3 = torch.tensor(Image.open(f'{image_root}/im3.png')) / 255
         t = 0.5
 
-        return img1, img3, t, img2
-        
+        return img1, img3, img2

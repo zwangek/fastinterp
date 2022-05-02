@@ -140,7 +140,7 @@ class FlowEstimator(nn.Module):
         frame1_0 = self.warp(img0_0, flow1_0)
         frame_0 = (frame0_0 + frame1_0) / 2
 
-        return frame_0, frame0_0, frame0_1, frame_1, frame0_1, frame1_1, frame_2, frame0_2, frame1_2
+        return frame_0, frame0_0, frame1_0, frame_1, frame0_1, frame1_1, frame_2, frame0_2, frame1_2 
         
     
     def warp(self, x, flow):

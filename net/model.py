@@ -100,8 +100,16 @@ class FlowEstimator(nn.Module):
         self.flow0_0 = conv(in_channels=channels*1*2, out_channels=2, kernel_size=3, stride=1, padding=1)
         self.flow1_0 = conv(in_channels=channels*1*2, out_channels=2, kernel_size=3, stride=1, padding=1)
 
+        # mask estimation
+        self.mask0_2 = conv(in_channels=channels*4*2, out_channels=2, kernel_size=3, stride=1, padding=1)
+        self.mask1_2 = conv(in_channels=channels*4*2, out_channels=2, kernel_size=3, stride=1, padding=1)
+        self.mask0_1 = conv(in_channels=channels*2*2, out_channels=2, kernel_size=3, stride=1, padding=1)
+        self.mask1_1 = conv(in_channels=channels*2*2, out_channels=2, kernel_size=3, stride=1, padding=1)
+        self.mask0_0 = conv(in_channels=channels*1*2, out_channels=2, kernel_size=3, stride=1, padding=1)
+        self.mask1_0 = conv(in_channels=channels*1*2, out_channels=2, kernel_size=3, stride=1, padding=1)
+
     def forward(self, img0, img1, return_flow=False):
-        img0_0, img0_1, img0_2 = img0
+        img0_0, img0_1, img0_2 = img0 # ori 1/2 1/4
         img1_0, img1_1, img1_2 = img1
 
         # downsample
@@ -115,30 +123,45 @@ class FlowEstimator(nn.Module):
 
         # aggregation & estimate flow on 1/4 resoluion
         feat0_2, feat1_2 = self.aggregate_2(feat0_2a, feat1_2a) # 4C H/4
-        flow0_2 = self.flow0_2(torch.cat((feat0_2, feat1_2), dim=1)) # 2 H/4
-        flow1_2 = self.flow1_2(torch.cat((feat0_2, feat1_2), dim=1))
-        frame0_2 = self.warp(img0_2, flow0_2) # 3 H/4
-        frame1_2 = self.warp(img1_2, flow1_2)
+        feat_2 = torch.cat((feat0_2, feat1_2), dim=1)
+        flow0_2 = self.flow0_2(feat_2) # 2 H/4
+        mask0_2 = self.mask0_2(feat_2)
+        flow1_2 = self.flow1_2(feat_2)
+        mask1_2 = self.mask1_2(feat_2)
+        frame0_2 = self.warp(img0_2, flow0_2, mask0_2) # 3 H/4
+        frame1_2 = self.warp(img1_2, flow1_2, mask1_2)
         frame_2 = (frame0_2 + frame1_2) / 2
 
         # upsample to 1/2 resolution
-        feat0_1b = self.lateral0_1b(self.deconv0_2(torch.cat((feat0_2, frame_2, flow0_2), dim=1)) + feat0_1a) # 2C H/2
-        feat1_1b = self.lateral1_1b(self.deconv1_2(torch.cat((feat1_2, frame_2, flow1_2), dim=1)) + feat1_1a)
+        flow0_2 = F.interpolate(flow0_2, scaler_factor=2, mode='bilinear', align_corners=False)
+        flow1_2 = F.interpolate(flow1_2, scaler_factor=2, mode='bilinear', align_corners=False)
+        feat0_1b = self.lateral0_1b(self.deconv0_2(torch.cat((feat0_2, frame_2), dim=1))) # 2C H/2
+        feat1_1b = self.lateral1_1b(self.deconv1_2(torch.cat((feat1_2, frame_2), dim=1)))
         feat0_1, feat1_1 = self.aggregate_1(feat0_1b, feat1_1b) # 2C H/2
-        flow0_1 = self.flow0_1(torch.cat((feat0_1, feat1_1), dim=1)) # 2 H/2
-        flow1_1 = self.flow1_1(torch.cat((feat0_1, feat1_1), dim=1))
-        frame0_1 = self.warp(img0_1, flow0_1) # 3 H/2
-        frame1_1 = self.warp(img1_1, flow1_1)
+
+        feat_1 = torch.cat((feat0_1, feat1_1), dim=1)
+        flow0_1 = self.flow0_1(feat_1) + flow0_2 # 2 H/2
+        mask0_1 = self.mask0_1(feat_1) + mask0_2
+        flow1_1 = self.flow1_1(feat_1) + flow1_2
+        mask1_1 = self.mask1_1(feat_1) + mask1_2
+        frame0_1 = self.warp(img0_1, flow0_1, mask0_1) # 3 H/2
+        frame1_1 = self.warp(img1_1, flow1_1, mask1_1)
         frame_1 = (frame0_1 + frame1_1) / 2
 
         # upsample to 1/1 resolution
-        feat0_0b = self.lateral0_0b(self.deconv0_1(torch.cat((feat0_1, frame_1, flow0_1), dim=1)) + feat0_0a) # C H
-        feat1_0b = self.lateral1_0b(self.deconv1_1(torch.cat((feat1_1, frame_1, flow1_1), dim=1)) + feat1_0a)
+        flow0_1 = F.interpolate(flow0_1, scaler_factor=2, mode='bilinear', align_corners=False)
+        flow1_1 = F.interpolate(flow1_1, scaler_factor=2, mode='bilinear', align_corners=False)
+        feat0_0b = self.lateral0_0b(self.deconv0_1(torch.cat((feat0_1, frame_1), dim=1))) # C H
+        feat1_0b = self.lateral1_0b(self.deconv1_1(torch.cat((feat1_1, frame_1), dim=1)) + feat)
         feat0_0, feat1_0 = self.aggregate_0(feat0_0b, feat1_0b)
-        flow0_0 = self.flow0_0(torch.cat((feat0_0, feat1_0), dim=1))
-        flow1_0 = self.flow1_0(torch.cat((feat0_0, feat1_0), dim=1))
-        frame0_0 = self.warp(img0_0, flow0_0)
-        frame1_0 = self.warp(img0_0, flow1_0)
+
+        feat_0 = torch.cat((feat0_0, feat1_0), dim=1)
+        flow0_0 = self.flow0_0(feat_0) + flow0_1
+        mask0_0 = self.mask0_0(feat_0) + mask0_1
+        flow1_0 = self.flow1_0(feat_0) + flow1_1
+        mask1_0 = self.mask1_0(feat_0) + mask1_1
+        frame0_0 = self.warp(img0_0, flow0_0, mask0_1)
+        frame1_0 = self.warp(img0_0, flow1_0, mask1_1)
         frame_0 = (frame0_0 + frame1_0) / 2
 
         if not return_flow:
@@ -147,29 +170,19 @@ class FlowEstimator(nn.Module):
             return frame_0, frame0_0, frame1_0, flow0_0, flow1_0
         
     
-    def warp(self, x, flow):
-        B, C, H, W = x.size()
-        # mesh grid
-        xx = torch.arange(0, W).view(1, 1, 1, W).expand(B, 1, H, W)
-        yy = torch.arange(0, H).view(1, 1, H, 1).expand(B, 1, H, W)
+    def warp(tenInput, tenFlow):
+        k = (str(tenFlow.device), str(tenFlow.size()))
+        if k not in backwarp_tenGrid:
+            tenHorizontal = torch.linspace(-1.0, 1.0, tenFlow.shape[3], device=device).view(
+                1, 1, 1, tenFlow.shape[3]).expand(tenFlow.shape[0], -1, tenFlow.shape[2], -1)
+            tenVertical = torch.linspace(-1.0, 1.0, tenFlow.shape[2], device=device).view(
+                1, 1, tenFlow.shape[2], 1).expand(tenFlow.shape[0], -1, -1, tenFlow.shape[3])
+            backwarp_tenGrid[k] = torch.cat(
+                [tenHorizontal, tenVertical], 1).to(device)
 
-        grid = torch.cat((xx, yy), 1).float()
+        tenFlow = torch.cat([tenFlow[:, 0:1, :, :] / ((tenInput.shape[3] - 1.0) / 2.0),
+                            tenFlow[:, 1:2, :, :] / ((tenInput.shape[2] - 1.0) / 2.0)], 1)
 
-        if x.is_cuda:
-            grid = grid.to(x.device)
+        g = (backwarp_tenGrid[k] + tenFlow).permute(0, 2, 3, 1)
+        return torch.nn.functional.grid_sample(input=tenInput, grid=g, mode='bilinear', padding_mode='border', align_corners=True)
 
-        vgrid = torch.autograd.Variable(grid) + flow
-
-        # scale grid to [-1,1]
-        vgrid[:, 0, :, :] = 2.0 * vgrid[:, 0, :, :] / max(W - 1, 1) - 1.0
-        vgrid[:, 1, :, :] = 2.0 * vgrid[:, 1, :, :] / max(H - 1, 1) - 1.0
-
-        vgrid = vgrid.permute(0, 2, 3, 1)
-        output = nn.functional.grid_sample(x, vgrid, align_corners=True)
-        mask = torch.autograd.Variable(torch.ones(x.size())).to(x.device)
-        mask = nn.functional.grid_sample(mask, vgrid, align_corners=True)
-
-        mask = mask.masked_fill_(mask < 0.999, 0)
-        mask = mask.masked_fill_(mask > 0, 1)
-
-        return output * mask

@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from net.warp import warp
 
 def conv(in_channels, out_channels, kernel_size=3, stride=1, padding=1, dilation=1):
     return nn.Sequential(
@@ -86,11 +87,11 @@ class FlowEstimator(nn.Module):
         self.aggregate_2 = AggregationBlock(channels*4)
 
         # upsample
-        self.deconv0_1 = deconv(in_channels=channels*2+3+2, out_channels=channels, kernel_size=4, stride=2, padding=1)
-        self.deconv0_2 = deconv(in_channels=channels*4+3+2, out_channels=channels*2, kernel_size=4, stride=2, padding=1)
+        self.deconv0_1 = deconv(in_channels=channels*2+3+1, out_channels=channels, kernel_size=4, stride=2, padding=1)
+        self.deconv0_2 = deconv(in_channels=channels*4+3+1, out_channels=channels*2, kernel_size=4, stride=2, padding=1)
 
-        self.deconv1_1 = deconv(in_channels=channels*2+3+2, out_channels=channels, kernel_size=4, stride=2, padding=1)
-        self.deconv1_2 = deconv(in_channels=channels*4+3+2, out_channels=channels*2, kernel_size=4, stride=2, padding=1)
+        self.deconv1_1 = deconv(in_channels=channels*2+3+1, out_channels=channels, kernel_size=4, stride=2, padding=1)
+        self.deconv1_2 = deconv(in_channels=channels*4+3+1, out_channels=channels*2, kernel_size=4, stride=2, padding=1)
 
         # flow estimation
         self.flow0_2 = conv(in_channels=channels*4*2, out_channels=2, kernel_size=3, stride=1, padding=1)
@@ -108,7 +109,7 @@ class FlowEstimator(nn.Module):
         self.mask0_0 = conv(in_channels=channels*1*2, out_channels=1, kernel_size=3, stride=1, padding=1)
         self.mask1_0 = conv(in_channels=channels*1*2, out_channels=1, kernel_size=3, stride=1, padding=1)
 
-    def forward(self, img0, img1, return_flow=False):
+    def forward(self, img0, img1, return_all=False):
         img0_0, img0_1, img0_2 = img0 # ori 1/2 1/4
         img1_0, img1_1, img1_2 = img1
 
@@ -128,15 +129,17 @@ class FlowEstimator(nn.Module):
         mask0_2 = self.mask0_2(feat_2) # 1 H/4
         flow1_2 = self.flow1_2(feat_2)
         mask1_2 = self.mask1_2(feat_2)
-        frame0_2 = self.warp(img0_2, flow0_2) # 3 H/4
-        frame1_2 = self.warp(img1_2, flow1_2)
-        frame_2 = (frame0_2 + frame1_2) / 2
+        frame0_2 = warp(img0_2, flow0_2) # 3 H/4
+        frame1_2 = warp(img1_2, flow1_2)
 
         # upsample to 1/2 resolution
         flow0_2 = F.interpolate(flow0_2, scaler_factor=2, mode='bilinear', align_corners=False)
         flow1_2 = F.interpolate(flow1_2, scaler_factor=2, mode='bilinear', align_corners=False)
-        feat0_1b = self.lateral0_1b(self.deconv0_2(torch.cat((feat0_2, frame_2), dim=1))) # 2C H/2
-        feat1_1b = self.lateral1_1b(self.deconv1_2(torch.cat((feat1_2, frame_2), dim=1)))
+        mask0_2 = F.interpolate(mask0_2, scaler_factor=2, mode='bilinear', align_corners=False)
+        mask1_2 = F.interpolate(mask1_2, scaler_factor=2, mode='bilinear', align_corners=False)
+
+        feat0_1b = self.lateral0_1b(self.deconv0_2(torch.cat((feat0_2, frame0_2, mask0_2), dim=1))) # 2C H/2
+        feat1_1b = self.lateral1_1b(self.deconv1_2(torch.cat((feat1_2, frame1_2, mask1_2), dim=1)))
         feat0_1, feat1_1 = self.aggregate_1(feat0_1b, feat1_1b) # 2C H/2
 
         feat_1 = torch.cat((feat0_1, feat1_1), dim=1)
@@ -144,45 +147,37 @@ class FlowEstimator(nn.Module):
         mask0_1 = self.mask0_1(feat_1) + mask0_2
         flow1_1 = self.flow1_1(feat_1) + flow1_2
         mask1_1 = self.mask1_1(feat_1) + mask1_2
-        frame0_1 = self.warp(img0_1, flow0_1) # 3 H/2
-        frame1_1 = self.warp(img1_1, flow1_1)
-        frame_1 = (frame0_1 + frame1_1) / 2
+        frame0_1 = warp(img0_1, flow0_1) # 3 H/2
+        frame1_1 = warp(img1_1, flow1_1)
 
         # upsample to 1/1 resolution
         flow0_1 = F.interpolate(flow0_1, scaler_factor=2, mode='bilinear', align_corners=False)
         flow1_1 = F.interpolate(flow1_1, scaler_factor=2, mode='bilinear', align_corners=False)
-        feat0_0b = self.lateral0_0b(self.deconv0_1(torch.cat((feat0_1, frame_1), dim=1))) # C H
-        feat1_0b = self.lateral1_0b(self.deconv1_1(torch.cat((feat1_1, frame_1), dim=1)))
-        feat0_0, feat1_0 = self.aggregate_0(feat0_0b, feat1_0b)
+        mask0_1 = F.interpolate(mask0_1, scaler_factor=2, mode='bilinear', align_corners=False)
+        mask1_1 = F.interpolate(mask1_1, scaler_factor=2, mode='bilinear', align_corners=False)
 
+        feat0_0b = self.lateral0_0b(self.deconv0_1(torch.cat((feat0_1, frame0_1, mask0_1), dim=1))) # C H
+        feat1_0b = self.lateral1_0b(self.deconv1_1(torch.cat((feat1_1, frame1_1, mask1_1), dim=1)))
+        feat0_0, feat1_0 = self.aggregate_0(feat0_0b, feat1_0b)
         feat_0 = torch.cat((feat0_0, feat1_0), dim=1)
         flow0_0 = self.flow0_0(feat_0) + flow0_1
         mask0_0 = self.mask0_0(feat_0) + mask0_1
         flow1_0 = self.flow1_0(feat_0) + flow1_1
         mask1_0 = self.mask1_0(feat_0) + mask1_1
-        frame0_0 = self.warp(img0_0, flow0_0, mask0_1)
-        frame1_0 = self.warp(img0_0, flow1_0, mask1_1)
-        frame_0 = (frame0_0 + frame1_0) / 2
+        frame0_0 = warp(img0_0, flow0_0)
+        frame1_0 = warp(img0_0, flow1_0)
 
-        if not return_flow:
-            return frame_0, frame0_0, frame1_0, frame_1, frame0_1, frame1_1, frame_2, frame0_2, frame1_2 
+        if return_all:
+            return {
+                'flow': (flow0_0, flow1_0, flow0_1, flow1_1, flow0_2, flow1_2),
+                'mask': (mask0_0, mask1_0, mask0_1, mask1_1, mask0_2, mask1_2),
+                'frame': (frame0_0, frame1_0, frame0_1, frame1_1, frame0_2, frame1_2)
+            }
         else:
-            return frame_0, frame0_0, frame1_0, flow0_0, flow1_0
-        
-    
-    def warp(tenInput, tenFlow):
-        k = (str(tenFlow.device), str(tenFlow.size()))
-        if k not in backwarp_tenGrid:
-            tenHorizontal = torch.linspace(-1.0, 1.0, tenFlow.shape[3], device=device).view(
-                1, 1, 1, tenFlow.shape[3]).expand(tenFlow.shape[0], -1, tenFlow.shape[2], -1)
-            tenVertical = torch.linspace(-1.0, 1.0, tenFlow.shape[2], device=device).view(
-                1, 1, tenFlow.shape[2], 1).expand(tenFlow.shape[0], -1, -1, tenFlow.shape[3])
-            backwarp_tenGrid[k] = torch.cat(
-                [tenHorizontal, tenVertical], 1).to(device)
+            return {
+                'flow': (flow0_0, flow1_0),
+                'mask': (mask0_0, mask1_0),
+                'frame': (frame0_0, frame1_0)
+            }
 
-        tenFlow = torch.cat([tenFlow[:, 0:1, :, :] / ((tenInput.shape[3] - 1.0) / 2.0),
-                            tenFlow[:, 1:2, :, :] / ((tenInput.shape[2] - 1.0) / 2.0)], 1)
-
-        g = (backwarp_tenGrid[k] + tenFlow).permute(0, 2, 3, 1)
-        return torch.nn.functional.grid_sample(input=tenInput, grid=g, mode='bilinear', padding_mode='border', align_corners=True)
 

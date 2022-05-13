@@ -59,7 +59,14 @@ def main():
             img0 = (img0_0, img0_1, img0_2)
             img1 = (img1_0, img1_1, img1_2)
 
-            frame_0, frame0_0, frame1_0, frame_1, frame0_1, frame1_1, frame_2, frame0_2, frame1_2 = model(img0, img1)
+            result = model(img0, img1, return_all=True)
+
+            frame0_0, frame1_0, frame0_1, frame1_1, frame0_2, frame1_2 = result['frame']
+            mask0_0, mask1_0, mask0_1, mask1_1, mask0_2, mask1_2 = result['mask']
+
+            frame_0 = frame0_0*mask0_0 + frame1_0*mask1_0
+            frame_1 = frame0_1*mask0_1 + frame1_1*mask1_1
+            frame_2 = frame0_2*mask0_2 + frame1_2*mask1_2
 
             loss_cons = (frame0_0-frame1_0).abs().mean() + (frame0_1-frame1_1).abs().mean() + (frame0_2-frame1_2).abs().mean()
             loss_rec = (frame_0-gt_0).abs().mean() + (frame_1-gt_1).abs().mean() + (frame_2-gt_2).abs().mean()
@@ -102,7 +109,11 @@ def main():
                 img0 = (img0_0, img0_1, img0_2)
                 img1 = (img1_0, img1_1, img1_2)
 
-                frame_0, frame0_0, frame1_0, flow0_0, flow1_0 = model(img0, img1, return_flow=True)
+                result = model(img0, img1, return_all=False)
+                frame0, frame1 = result['frame']
+                mask0, mask1 = result['mask']
+                flow0, flow1 = result['flow']
+                frame = frame0*mask0 + frame1*mask1
                 loss_cons += (frame0_0-frame1_0).abs().mean()
                 loss_rec += (frame_0-gt_0).abs().mean()
 
@@ -123,13 +134,13 @@ def main():
                 torch.save(model.state_dict(), f"{opt.train['ckpt_dir']}/ckpt_best.pth")
             # visualization
             if global_step % opt.train['viz_every'] == 0:
-                for i in range(2):
+                for i in range(4):
                     img0 = (img0_0[i].permute(1,2,0).cpu().numpy() * 255).astype(np.uint8)
                     img1 = (img1_0[i].permute(1,2,0).cpu().numpy() * 255).astype(np.uint8)
                     gt = (gt_0[i].permute(1,2,0).cpu().numpy() * 255).astype(np.uint8)
-                    pred = (frame_0[i].permute(1,2,0).cpu().numpy() * 255).astype(np.uint8)
-                    flow0 = flow0_0[i].permute(1,2,0).cpu().numpy()
-                    flow1 = flow1_0[i].permute(1,2,0).cpu().numpy()
+                    pred = (frame[i].permute(1,2,0).cpu().numpy() * 255).astype(np.uint8)
+                    flow0 = flow0[i].permute(1,2,0).cpu().numpy()
+                    flow1 = flow1[i].permute(1,2,0).cpu().numpy()
                     writer.add_image(f'vis_{i}/img0', img0, e, dataformats='HWC')
                     writer.add_image(f'vis_{i}/img1', img1, e, dataformats='HWC')
                     writer.add_image(f'vis_{i}/gt', gt, e, dataformats='HWC')

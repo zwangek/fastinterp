@@ -101,12 +101,12 @@ class FlowEstimator(nn.Module):
         self.flow1_0 = conv(in_channels=channels*1*2, out_channels=2, kernel_size=3, stride=1, padding=1)
 
         # mask estimation
-        self.mask0_2 = conv(in_channels=channels*4*2, out_channels=2, kernel_size=3, stride=1, padding=1)
-        self.mask1_2 = conv(in_channels=channels*4*2, out_channels=2, kernel_size=3, stride=1, padding=1)
-        self.mask0_1 = conv(in_channels=channels*2*2, out_channels=2, kernel_size=3, stride=1, padding=1)
-        self.mask1_1 = conv(in_channels=channels*2*2, out_channels=2, kernel_size=3, stride=1, padding=1)
-        self.mask0_0 = conv(in_channels=channels*1*2, out_channels=2, kernel_size=3, stride=1, padding=1)
-        self.mask1_0 = conv(in_channels=channels*1*2, out_channels=2, kernel_size=3, stride=1, padding=1)
+        self.mask0_2 = conv(in_channels=channels*4*2, out_channels=1, kernel_size=3, stride=1, padding=1)
+        self.mask1_2 = conv(in_channels=channels*4*2, out_channels=1, kernel_size=3, stride=1, padding=1)
+        self.mask0_1 = conv(in_channels=channels*2*2, out_channels=1, kernel_size=3, stride=1, padding=1)
+        self.mask1_1 = conv(in_channels=channels*2*2, out_channels=1, kernel_size=3, stride=1, padding=1)
+        self.mask0_0 = conv(in_channels=channels*1*2, out_channels=1, kernel_size=3, stride=1, padding=1)
+        self.mask1_0 = conv(in_channels=channels*1*2, out_channels=1, kernel_size=3, stride=1, padding=1)
 
     def forward(self, img0, img1, return_flow=False):
         img0_0, img0_1, img0_2 = img0 # ori 1/2 1/4
@@ -125,11 +125,11 @@ class FlowEstimator(nn.Module):
         feat0_2, feat1_2 = self.aggregate_2(feat0_2a, feat1_2a) # 4C H/4
         feat_2 = torch.cat((feat0_2, feat1_2), dim=1)
         flow0_2 = self.flow0_2(feat_2) # 2 H/4
-        mask0_2 = self.mask0_2(feat_2)
+        mask0_2 = self.mask0_2(feat_2) # 1 H/4
         flow1_2 = self.flow1_2(feat_2)
         mask1_2 = self.mask1_2(feat_2)
-        frame0_2 = self.warp(img0_2, flow0_2, mask0_2) # 3 H/4
-        frame1_2 = self.warp(img1_2, flow1_2, mask1_2)
+        frame0_2 = self.warp(img0_2, flow0_2) # 3 H/4
+        frame1_2 = self.warp(img1_2, flow1_2)
         frame_2 = (frame0_2 + frame1_2) / 2
 
         # upsample to 1/2 resolution
@@ -144,15 +144,15 @@ class FlowEstimator(nn.Module):
         mask0_1 = self.mask0_1(feat_1) + mask0_2
         flow1_1 = self.flow1_1(feat_1) + flow1_2
         mask1_1 = self.mask1_1(feat_1) + mask1_2
-        frame0_1 = self.warp(img0_1, flow0_1, mask0_1) # 3 H/2
-        frame1_1 = self.warp(img1_1, flow1_1, mask1_1)
+        frame0_1 = self.warp(img0_1, flow0_1) # 3 H/2
+        frame1_1 = self.warp(img1_1, flow1_1)
         frame_1 = (frame0_1 + frame1_1) / 2
 
         # upsample to 1/1 resolution
         flow0_1 = F.interpolate(flow0_1, scaler_factor=2, mode='bilinear', align_corners=False)
         flow1_1 = F.interpolate(flow1_1, scaler_factor=2, mode='bilinear', align_corners=False)
         feat0_0b = self.lateral0_0b(self.deconv0_1(torch.cat((feat0_1, frame_1), dim=1))) # C H
-        feat1_0b = self.lateral1_0b(self.deconv1_1(torch.cat((feat1_1, frame_1), dim=1)) + feat)
+        feat1_0b = self.lateral1_0b(self.deconv1_1(torch.cat((feat1_1, frame_1), dim=1)))
         feat0_0, feat1_0 = self.aggregate_0(feat0_0b, feat1_0b)
 
         feat_0 = torch.cat((feat0_0, feat1_0), dim=1)

@@ -11,6 +11,7 @@ from options import Options
 from tqdm import tqdm
 import numpy as np
 import math
+import shutils
 
 def main():
     opt = Options()
@@ -63,7 +64,6 @@ def main():
 
             frame0_0, frame1_0, frame0_1, frame1_1, frame0_2, frame1_2 = result['frame']
             mask0_0, mask1_0, mask0_1, mask1_1, mask0_2, mask1_2 = result['mask']
-
             frame_0 = frame0_0*mask0_0 + frame1_0*mask1_0
             frame_1 = frame0_1*mask0_1 + frame1_1*mask1_1
             frame_2 = frame0_2*mask0_2 + frame1_2*mask1_2

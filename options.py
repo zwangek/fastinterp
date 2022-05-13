@@ -3,16 +3,16 @@ class Options():
     def __init__(self):
         self.data_root = '/home/wzy/workspace/data/vimeo_triplet'
         self.output_root = './output/'
-        self.gpus = [0,3]
+        self.gpus = [0,]
 
         self.train = {
             'crop_size': (224, 224),
-            'features': 32,
-            'batch_size': 64,
+            'channels': 32,
+            'batch_size': 45,
             'num_workers': 4,
             'epochs': 50,
             'loss_weight': {'rec': 1.0, 'cons': 0.1, 'perc': 0.1},
-            'base_lr': 3e-4,
+            'base_lr': 1e-3,
             'min_lr': 1e-5,
             'weight_decay': 1e-4,
             'print_every': 25, # step

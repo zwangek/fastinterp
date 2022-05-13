@@ -28,7 +28,7 @@ def main():
     train_set = Vimeo90K(opt.data_root, 'train', crop_size=opt.train['crop_size'])
     val_set = Vimeo90K(opt.data_root, 'val', crop_size=opt.train['crop_size'])
     train_loader = DataLoader(train_set, batch_size=opt.train['batch_size'], shuffle=True, num_workers=opt.train['num_workers'])
-    val_loader = DataLoader(val_set, batch_size=opt.train['batch_size'], shuffle=False, num_workers=opt.train['num_workers'], drop_last=True)
+    val_loader = DataLoader(val_set, batch_size=opt.train['batch_size'], shuffle=True, num_workers=opt.train['num_workers'], drop_last=True)
 
     log_dir = opt.train['log_dir']
     ckpt_dir = opt.train['ckpt_dir']
@@ -146,7 +146,7 @@ def main():
                     writer.add_image(f'vis_{i}/mask', mask, e, dataformats='HWC')
         if e % opt.train['save_every'] == 0:
             torch.save(model.state_dict(), f"{opt.train['ckpt_dir']}/ckpt_{e}.pth")
-
+    torch.save(model.state_dict(), f"{opt.train['ckpt_dir']}/ckpt_fin.pth")
 
 def get_learning_rate(step, total_steps, base_lr=3e-4, min_lr=3e-5, warmup=2000.):
     # warm up

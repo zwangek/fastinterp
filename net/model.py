@@ -109,7 +109,7 @@ class FlowEstimator(nn.Module):
     def forward(self, img0, img1, return_all=False):
         img0_0, img0_1, img0_2 = img0 # ori 1/2 1/4
         img1_0, img1_1, img1_2 = img1
-
+        
         # downsample
         feat0_0a = self.lateral0_0a(self.conv0_0(img0_0)) # C H
         feat0_1a = self.lateral0_1a(self.conv0_1(feat0_0a)) # 2C H/2
@@ -124,10 +124,11 @@ class FlowEstimator(nn.Module):
         feat_2 = torch.cat((feat0_2, feat1_2), dim=1)
         flow0_2 = self.flow0_2(feat_2) # 2 H/4
         flow1_2 = self.flow1_2(feat_2)
-        mask_2 = torch.sigmoid(self.mask_2(feat_2)) # 1 H/4
+        mask_2 = self.mask_2(feat_2) # 1 H/4
+        mask_2_sig = torch.sigmoid(mask_2)
         frame0_2 = warp(img0_2, flow0_2) # 3 H/4
         frame1_2 = warp(img1_2, flow1_2)
-        frame_2 = frame0_2*mask_2 + frame1_2*(1-mask_2)
+        frame_2 = frame0_2*mask_2_sig + frame1_2*(1-mask_2_sig)
 
         # upsample to 1/2 resolution
         feat0_1b = self.lateral0_1b(self.deconv0_2(torch.cat((feat0_2, frame_2, flow0_2), dim=1))) # 2C H/2
@@ -138,10 +139,10 @@ class FlowEstimator(nn.Module):
         flow0_1 = self.flow0_1(feat_1) + F.interpolate(flow0_2, scale_factor=2, mode='bilinear', align_corners=False)
         flow1_1 = self.flow1_1(feat_1) + F.interpolate(flow1_2, scale_factor=2, mode='bilinear', align_corners=False)
         mask_1 = self.mask_1(feat_1) + F.interpolate(mask_2, scale_factor=2, mode='bilinear', align_corners=False)
-        mask_1 = torch.sigmoid(mask_1)
+        mask_1_sig = torch.sigmoid(mask_1)
         frame0_1 = warp(img0_1, flow0_1) # 3 H/2
         frame1_1 = warp(img1_1, flow1_1)
-        frame_1 = frame0_1*mask_1 + frame1_1*(1-mask_1)
+        frame_1 = frame0_1*mask_1_sig + frame1_1*(1-mask_1_sig)
 
         # upsample to 1/1 resolution
         feat0_0b = self.lateral0_0b(self.deconv0_1(torch.cat((feat0_1, frame_1, flow0_1), dim=1))) # C H
@@ -152,21 +153,21 @@ class FlowEstimator(nn.Module):
         flow0_0 = self.flow0_0(feat_0) + F.interpolate(flow0_1, scale_factor=2, mode='bilinear', align_corners=False)
         flow1_0 = self.flow1_0(feat_0) + F.interpolate(flow1_1, scale_factor=2, mode='bilinear', align_corners=False)
         mask_0 = self.mask_0(feat_0) + F.interpolate(mask_1, scale_factor=2, mode='bilinear', align_corners=False)
-        mask_0 = torch.sigmoid(mask_0)
+        mask_0_sig = torch.sigmoid(mask_0)
         frame0_0 = warp(img0_0, flow0_0)
         frame1_0 = warp(img0_0, flow1_0)
-        frame_0 = frame0_0*mask_0 + frame1_0*(1-mask_0)
+        frame_0 = frame0_0*mask_0_sig + frame1_0*(1-mask_0_sig)
 
         if return_all:
             return {
                 'flow': (flow0_0, flow1_0, flow0_1, flow1_1, flow0_2, flow1_2),
-                'mask': (mask_0, mask_1, mask_2),
+                'mask': (mask_0_sig, mask_1_sig, mask_2_sig),
                 'frame': (frame_0, frame0_0, frame1_0, frame_1, frame0_1, frame1_1, frame_2, frame0_2, frame1_2)
             }
         else:
             return {
                 'flow': (flow0_0, flow1_0),
-                'mask': mask_0,
+                'mask': mask_0_sig,
                 'frame': (frame_0, frame0_0, frame1_0)
             }
 

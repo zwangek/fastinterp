@@ -3,7 +3,7 @@ class Options():
     def __init__(self):
         self.data_root = '/home/wzy/workspace/data/vimeo_triplet'
         self.output_root = './output/'
-        self.gpus = [0,1]
+        self.gpus = [1]
 
         self.train = {
             'crop_size': (224, 224),
@@ -20,6 +20,10 @@ class Options():
             'save_every': 3, # epoch
             'log_dir': f'{self.output_root}/logs/',
             'ckpt_dir': f'{self.output_root}/checkpoints/'
+        }
+
+        self.test = {
+            'ckpt_dir': f'{self.output_root}/checkpoints/ckpt_best.pth'
         }
 
     def save(self):

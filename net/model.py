@@ -54,7 +54,7 @@ class AggregationBlock(nn.Module):
 
 
 class FlowEstimator(nn.Module):
-    def __init__(self, channels):
+    def __init__(self, channels, lateral_num):
         super().__init__()
         # downsample track
         self.conv0_0 = conv(in_channels=3, out_channels=channels, kernel_size=3, stride=1, padding=1)
@@ -66,20 +66,20 @@ class FlowEstimator(nn.Module):
         self.conv1_2 = conv(in_channels=channels*2, out_channels=channels*4, kernel_size=3, stride=2, padding=1)
 
         # lateral conv for down sample
-        self.lateral0_0a = LateralBlock(channels, 2)
-        self.lateral0_1a = LateralBlock(channels*2, 2)
-        self.lateral0_2a = LateralBlock(channels*4, 2)
+        self.lateral0_0a = LateralBlock(channels, lateral_num)
+        self.lateral0_1a = LateralBlock(channels*2, lateral_num)
+        self.lateral0_2a = LateralBlock(channels*4, lateral_num)
 
-        self.lateral1_0a = LateralBlock(channels, 2)
-        self.lateral1_1a = LateralBlock(channels*2, 2)
-        self.lateral1_2a = LateralBlock(channels*4, 2)
+        self.lateral1_0a = LateralBlock(channels, lateral_num)
+        self.lateral1_1a = LateralBlock(channels*2, lateral_num)
+        self.lateral1_2a = LateralBlock(channels*4, lateral_num)
 
         # lateral conv for up sample
-        self.lateral0_0b = LateralBlock(channels, 2)
-        self.lateral0_1b = LateralBlock(channels*2, 2)
+        self.lateral0_0b = LateralBlock(channels, lateral_num)
+        self.lateral0_1b = LateralBlock(channels*2, lateral_num)
 
-        self.lateral1_0b = LateralBlock(channels, 2)
-        self.lateral1_1b = LateralBlock(channels*2, 2)
+        self.lateral1_0b = LateralBlock(channels, lateral_num)
+        self.lateral1_1b = LateralBlock(channels*2, lateral_num)
 
         # aggregation blocks
         self.aggregate_0 = AggregationBlock(channels)
@@ -107,8 +107,12 @@ class FlowEstimator(nn.Module):
         self.mask_0 = conv(in_channels=channels*1*2, out_channels=1, kernel_size=3, stride=1, padding=1)
 
     def forward(self, img0, img1, return_all=False):
-        img0_0, img0_1, img0_2 = img0 # ori 1/2 1/4
-        img1_0, img1_1, img1_2 = img1
+        img0_0 = img0 # ori 1/2 1/4
+        img1_0 = img1
+        img0_1 = F.interpolate(img0_0, scale_factor=0.5, mode='bilinear', align_corners=False)
+        img0_2 = F.interpolate(img0_0, scale_factor=0.25, mode='bilinear', align_corners=False)
+        img1_1 = F.interpolate(img1_0, scale_factor=0.5, mode='bilinear', align_corners=False)
+        img1_2 = F.interpolate(img1_0, scale_factor=0.25, mode='bilinear', align_corners=False)
         
         # downsample
         feat0_0a = self.lateral0_0a(self.conv0_0(img0_0)) # C H
@@ -136,8 +140,8 @@ class FlowEstimator(nn.Module):
         feat0_1, feat1_1 = self.aggregate_1(feat0_1b, feat1_1b) # 2C H/2
         feat_1 = torch.cat((feat0_1, feat1_1), dim=1)
 
-        flow0_1 = self.flow0_1(feat_1) + F.interpolate(flow0_2, scale_factor=2, mode='bilinear', align_corners=False)
-        flow1_1 = self.flow1_1(feat_1) + F.interpolate(flow1_2, scale_factor=2, mode='bilinear', align_corners=False)
+        flow0_1 = self.flow0_1(feat_1) + F.interpolate(flow0_2, scale_factor=2, mode='bilinear', align_corners=False)*2
+        flow1_1 = self.flow1_1(feat_1) + F.interpolate(flow1_2, scale_factor=2, mode='bilinear', align_corners=False)*2
         mask_1 = self.mask_1(feat_1) + F.interpolate(mask_2, scale_factor=2, mode='bilinear', align_corners=False)
         mask_1_sig = torch.sigmoid(mask_1)
         frame0_1 = warp(img0_1, flow0_1) # 3 H/2
@@ -150,8 +154,8 @@ class FlowEstimator(nn.Module):
         feat0_0, feat1_0 = self.aggregate_0(feat0_0b, feat1_0b)
         feat_0 = torch.cat((feat0_0, feat1_0), dim=1)
 
-        flow0_0 = self.flow0_0(feat_0) + F.interpolate(flow0_1, scale_factor=2, mode='bilinear', align_corners=False)
-        flow1_0 = self.flow1_0(feat_0) + F.interpolate(flow1_1, scale_factor=2, mode='bilinear', align_corners=False)
+        flow0_0 = self.flow0_0(feat_0) + F.interpolate(flow0_1, scale_factor=2, mode='bilinear', align_corners=False)*2
+        flow1_0 = self.flow1_0(feat_0) + F.interpolate(flow1_1, scale_factor=2, mode='bilinear', align_corners=False)*2
         mask_0 = self.mask_0(feat_0) + F.interpolate(mask_1, scale_factor=2, mode='bilinear', align_corners=False)
         mask_0_sig = torch.sigmoid(mask_0)
         frame0_0 = warp(img0_0, flow0_0)

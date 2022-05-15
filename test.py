@@ -13,7 +13,7 @@ from tqdm import tqdm
 from dataset import Vimeo90K
 from net.model import FlowEstimator
 from options import Options
-
+import imageio
 
 def main():
     opt = Options()
@@ -24,7 +24,7 @@ def main():
     test_set = Vimeo90K(opt.data_root, 'test', crop_size=opt.train['crop_size'])
     test_loader = DataLoader(test_set, batch_size=1, shuffle=False)
 
-    model = FlowEstimator(opt.train['channels'])
+    model = FlowEstimator(opt.train['channels'], opt.train['lateral_num'])
     ckpt = torch.load(opt.test['ckpt_dir'], map_location='cpu')
     model.load_state_dict(ckpt)
     model.cuda()
@@ -41,21 +41,13 @@ def main():
             img1_0 = img1.float().cuda()
             gt_0 = gt.float().cuda()
 
-            img0_1 = F.interpolate(img0_0, scale_factor=0.5, mode='bilinear', align_corners=False)
-            img0_2 = F.interpolate(img0_0, scale_factor=0.25, mode='bilinear', align_corners=False)
-            img1_1 = F.interpolate(img1_0, scale_factor=0.5, mode='bilinear', align_corners=False)
-            img1_2 = F.interpolate(img1_0, scale_factor=0.25, mode='bilinear', align_corners=False)
-
-            img0 = (img0_0, img0_1, img0_2)
-            img1 = (img1_0, img1_1, img1_2)
-
             start = time.time()
-            result = model(img0, img1, return_all=False)
+            result = model(img0_0, img1_0, return_all=False)
             end = time.time()
             frame_0, _, _ = result['frame']
 
             pred = (frame_0[0].permute(1,2,0).cpu().numpy() * 255).astype(np.uint8) 
-            gt = (gt[0].permute(1,2,0).cpu().numpy() * 255).astype(np.uint8)
+            gt = (gt_0[0].permute(1,2,0).cpu().numpy() * 255).astype(np.uint8)
 
             psnr_list.append(psnr(pred, gt))
             ssim_list.append(ssim(pred, gt, multichannel=True))
@@ -74,3 +66,7 @@ if __name__ == '__main__':
 
 def perceptual_loss(pred, gt):
     pass
+
+
+# 2 
+# 4 33.10648394832165 0.9462927205260064 0.011724015192529122, with 1 another process running

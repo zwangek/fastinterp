@@ -20,7 +20,7 @@ def main():
 
     os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(str(x) for x in opt.gpus)
 
-    model = FlowEstimator(opt.train['channels']).cuda()
+    model = FlowEstimator(opt.train['channels'], opt.train['lateral_num']).cuda()
     # model = nn.DataParallel(model).cuda()
     
     optimizer = AdamW(model.parameters(), lr=opt.train['base_lr'], weight_decay=opt.train['weight_decay'])
@@ -50,18 +50,10 @@ def main():
             img0_0 = img0.float().cuda()
             img1_0 = img1.float().cuda()
             gt_0 = gt.float().cuda()
-
-            img0_1 = F.interpolate(img0_0, scale_factor=0.5, mode='bilinear', align_corners=False)
-            img0_2 = F.interpolate(img0_0, scale_factor=0.25, mode='bilinear', align_corners=False)
-            img1_1 = F.interpolate(img1_0, scale_factor=0.5, mode='bilinear', align_corners=False)
-            img1_2 = F.interpolate(img1_0, scale_factor=0.25, mode='bilinear', align_corners=False)
             gt_1 = F.interpolate(gt_0, scale_factor=0.5, mode='bilinear', align_corners=False)
             gt_2 = F.interpolate(gt_0, scale_factor=0.25, mode='bilinear', align_corners=False)
 
-            img0 = (img0_0, img0_1, img0_2)
-            img1 = (img1_0, img1_1, img1_2)
-
-            result = model(img0, img1, return_all=True)
+            result = model(img0_0, img1_0, return_all=True)
             frame_0, frame0_0, frame1_0, frame_1, frame0_1, frame1_1, frame_2, frame0_2, frame1_2 = result['frame']
 
             loss_cons = (frame0_0-frame1_0).abs().mean() + (frame0_1-frame1_1).abs().mean() + (frame0_2-frame1_2).abs().mean()
